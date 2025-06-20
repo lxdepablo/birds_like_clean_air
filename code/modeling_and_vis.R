@@ -10,7 +10,7 @@ library(tidyverse)
 
 # read in clean data ----
 birds_haboob <- read_csv("../data/birds_haboob.csv") %>%
-  mutate(meta.vsn = as.factor(meta.vsn))http://127.0.0.1:15513/graphics/plot_zoom_png?width=1888&height=931
+  mutate(meta.vsn = as.factor(meta.vsn))
 haboob_time <- read_csv("../data/haboob_time.csv")
 pm10 <- read_csv("../data/pm10.csv")
 
@@ -28,7 +28,7 @@ ggplot(data = birds_haboob, aes(x = time_since_haboob, y = richness)) +
 
 # visualize smooth effect of time ----
 smooth_data <- birds_haboob %>%
-  select(meta.vsn, date, time_since_haboob)
+  dplyr::select(meta.vsn, date, time_since_haboob)
 
 all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE)
 
