@@ -54,6 +54,10 @@ birds_haboob <- birds_backfilled %>%
 # wrangle env data ----
 pm10 <- env_raw %>%
   filter(name == "aqt.particle.pm10")
+pm2.5 <- env_raw %>%
+  filter(name == "aqt.particle.pm2.5")
+pm1 <- env_raw %>%
+  filter(name == "aqt.particle.pm1")
 
 # visualize particles
 ggplot(data = pm10, aes(x = timestamp, y = value)) +
@@ -61,6 +65,18 @@ ggplot(data = pm10, aes(x = timestamp, y = value)) +
   geom_vline(xintercept = ymd_h("2025-05-16 18"), col = "red", linetype = "dashed") +
   facet_wrap(~meta.vsn) +
   labs(x = "Date", y = "PM10 Concentration (ug/m^3)", title = "Particulate Matter Aligns with Haboob Onset") +
+  theme_minimal()
+ggplot() +
+  geom_line(data = pm2.5, aes(x = timestamp, y = value), col = "cornsilk") +
+  geom_vline(xintercept = ymd_h("2025-06-05 12"), col = "red", linetype = "dashed") +
+  facet_wrap(~meta.vsn) +
+  labs(x = "Date", y = "PM2.5 Concentration (ug/m^3)") +
+  theme_minimal()
+ggplot(data = env_raw, aes(x = timestamp, y = value, col = name)) +
+  geom_line() +
+  geom_vline(xintercept = ymd_h("2025-06-05 12"), col = "red", linetype = "dashed") +
+  facet_wrap(~meta.vsn) +
+  labs(x = "Date", y = "PM Concentration (ug/m^3)") +
   theme_minimal()
 
 # find start of haboob for each site
