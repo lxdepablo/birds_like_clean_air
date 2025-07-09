@@ -5,9 +5,11 @@
 # set working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-# load libraries and source helper functions ----
+# load libraries ----
 library(sageDataR)
+library(riem)
 library(furrr)
+library(tidyverse)
 
 # pull bird richness data ----
 # define which nodes to pull data from
@@ -37,7 +39,6 @@ all_bird_data <- bind_rows(future_map(crocus_vsns, function(vsn){
 
 
 # pull air quality data ----
-tic()
 all_aq_data <- bind_rows(future_map(crocus_vsns, function(vsn){
   curr_node_aq <- query_sage_data(start = "2025-05-02",
                                   end = "2025-06-18",
@@ -46,11 +47,33 @@ all_aq_data <- bind_rows(future_map(crocus_vsns, function(vsn){
 }))
 
 plan(sequential)
-toc()
+
+# pull ASOS visibility data ----
+# list stations to pull data from
+stations <- c("MDW", "ORD", "06C", "DPA", "IGQ", "LOT", "PWK")
+
+all_asos_data <- bind_rows(lapply(stations, function(s){
+  curr_asos <- riem_measures(station = s,
+                            date_start = "2025-05-16",
+                            date_end = "2025-05-18",
+                            data = "vsby")
+}))
+
 
 # write data to CSVs ----
 write_csv(all_bird_data, "../data/birds_richness.csv")
 write_csv(all_aq_data, "../data/air_quality.csv")
+write_csv(all_asos_data, "../data/asos.csv")
+
+
+
+
+
+
+
+
+
+
 
 
 
