@@ -11,18 +11,29 @@ library(mgcv)
 library(ggrepel)
 
 # read in clean data ----
+# bird richness
 birds_haboob <- read_csv("../data/birds_haboob.csv") %>%
   mutate(meta.vsn = as.factor(meta.vsn))
+# haboob onset
 haboob_time <- read_csv("../data/haboob_time.csv")
+# air particulates
 pm10 <- read_csv("../data/pm10.csv")
+# airport visibility
+visibility <- read_csv("../data/visibility.csv")
 
 # fit GAMs ----
 # fit GAM random site effect
 gam_model <- gam(
-  richness ~ s(time_since_haboob) + s(meta.vsn, bs = "re"),
-  data = birds_haboob
+  richness ~ s(time_since_haboob) +
+    #s(tod, bs = "cc") +
+    s(meta.vsn, bs = "re"),
+  data = birds_haboob,
+  method = "REML"
 )
 summary(gam_model)
+
+AIC(gam_model)
+
 # fit GAM without random effect of site
 gam_model_global <- gam(
   richness ~ s(time_since_haboob),
@@ -36,7 +47,7 @@ ggplot(data = birds_haboob, aes(x = time_since_haboob, y = richness)) +
 
 # visualize smooth effect of time ----
 smooth_data <- birds_haboob %>%
-  dplyr::select(meta.vsn, date, time_since_haboob)
+  dplyr::select(meta.vsn, date, time_since_haboob, tod)
 global_smooth_data <- smooth_data %>%
   filter(meta.vsn == "W08B") %>%
   select(-meta.vsn)
@@ -62,8 +73,9 @@ plot_df_global <- global_smooth_data %>%
 # plot separate lines for each node
 ggplot(plot_df_all, aes(x = date, y = fit)) +
   geom_line(color = "blue") +
-  #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
   geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red") +
+  #geom_point(data = birds_haboob, aes(x = date, y = richness)) +
   facet_wrap(~ meta.vsn) +
   labs(
     title = "Bird Richness Recovery After Haboob",
@@ -169,7 +181,24 @@ ggplot(data = haboob_pm10, aes(x = timestamp, y = value, col = meta.vsn)) +
        title = "Particulate Matter Spikes During Haboob") +
   scale_color_viridis_d()
   
-  
-  
+# airport visibility ----
+ggplot(data = visibility, aes(x = timestamp, y = vsby, col = station)) +
+  geom_line() +
+  theme_minimal(base_size = 20) +
+  labs(x = "Date",
+       y = "Visibility (mi)",
+       col = "Station",
+       title = "Visibility Drops During Haboob") +
+  scale_color_viridis_d()
+
+
+
+
+
+
+
+
+
+
   
   
