@@ -5,7 +5,7 @@
 # set working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
-# load libraries and source helper functions ----
+# load libraries ----
 library(tidyverse)
 
 # read in data pulled from API ----

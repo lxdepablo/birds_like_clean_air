@@ -183,7 +183,7 @@ ggplot(data = haboob_pm10, aes(x = timestamp, y = value, col = meta.vsn)) +
   
 # airport visibility ----
 ggplot(data = visibility, aes(x = timestamp, y = vsby, col = station)) +
-  geom_line() +
+  geom_line(linewidth = 2) +
   theme_minimal(base_size = 20) +
   labs(x = "Date",
        y = "Visibility (mi)",
