@@ -46,7 +46,16 @@ all_aq_data <- bind_rows(future_map(crocus_vsns, function(vsn){
                                                 vsn = vsn))
 }))
 
+# pull wind speed data ----
+all_wind_data <- bind_rows(future_map(crocus_vsns, function(vsn){
+  curr_node_birds <- query_sage_data(start = "2025-05-16 12:00:00",
+                                     end = "2025-05-17 12:00:00",
+                                     filter = list(name = "wxt.wind.*",
+                                                   vsn = vsn))
+}))
+
 plan(sequential)
+
 
 # pull ASOS visibility data ----
 # list stations to pull data from
