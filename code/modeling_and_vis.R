@@ -72,6 +72,7 @@ plot_df_global <- global_smooth_data %>%
 
 # plot separate lines for each node
 ggplot(plot_df_all, aes(x = date, y = fit)) +
+  geom_point(data = filter(birds_haboob, meta.vsn != "W09A"), aes(x = date, y = richness), size = 1, alpha = 0.3) +
   geom_line(color = "blue") +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
   geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red") +
@@ -82,7 +83,7 @@ ggplot(plot_df_all, aes(x = date, y = fit)) +
     x = "Date",
     y = "Hourly Richness"
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 20)
 
 # plot global trend
 # get mean time of haboob
