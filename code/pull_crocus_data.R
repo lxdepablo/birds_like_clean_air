@@ -5,6 +5,9 @@
 # set working directory ----
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 
+# check if package installed, and if not install it from GitHub ----
+if (!require("sageDataR")) devtools::install_github("lxdepablo/sageDataR")
+
 # load libraries ----
 library(sageDataR)
 library(riem)
@@ -32,7 +35,7 @@ plan(multisession, workers = availableCores())
 
 all_bird_data <- bind_rows(future_map(crocus_vsns, function(vsn){
   curr_node_birds <- query_sage_data(start = "2025-05-02",
-                                     end = "2025-06-18",
+                                     end = "2025-06-01",
                                      filter = list(name = "env.detection.avian.*",
                                                    vsn = vsn))
 }))
@@ -49,7 +52,7 @@ all_aq_data <- bind_rows(future_map(crocus_vsns, function(vsn){
 # pull wind speed data ----
 all_wind_data <- bind_rows(future_map(crocus_vsns, function(vsn){
   curr_node_birds <- query_sage_data(start = "2025-05-16 12:00:00",
-                                     end = "2025-05-17 12:00:00",
+                                     end = "2025-05-16 12:05:00",
                                      filter = list(name = "wxt.wind.*",
                                                    vsn = vsn))
 }))
@@ -73,7 +76,7 @@ all_asos_data <- bind_rows(lapply(stations, function(s){
 write_csv(all_bird_data, "../data/birds_richness.csv")
 write_csv(all_aq_data, "../data/air_quality.csv")
 write_csv(all_asos_data, "../data/asos.csv")
-
+write_csv(all_wind_data, "../data/wind.csv")
 
 
 

@@ -9,10 +9,13 @@ setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 library(tidyverse)
 library(mgcv)
 library(ggrepel)
+library(sf)
 
 # read in clean data ----
 # bird richness
 birds_haboob <- read_csv("../data/birds_haboob.csv") %>%
+  mutate(meta.vsn = as.factor(meta.vsn))
+birds_3h_haboob <- read_csv("../data/birds_3h_haboob.csv") %>%
   mutate(meta.vsn = as.factor(meta.vsn))
 # haboob onset
 haboob_time <- read_csv("../data/haboob_time.csv")
@@ -20,6 +23,14 @@ haboob_time <- read_csv("../data/haboob_time.csv")
 pm10 <- read_csv("../data/pm10.csv")
 # airport visibility
 visibility <- read_csv("../data/visibility.csv")
+# wind
+wind <- read_csv("../data/wind.csv")
+
+# get max pm10 concentration for each node during haboob ----
+max_pm10 <- pm10 %>%
+  filter(timestamp > ymd_hms("2025-05-16 08:00:00"), timestamp < ymd_hms("2025-05-17 08:00:00")) %>%
+  group_by(meta.vsn) %>%
+  summarize(max_val = max(value))
 
 # fit GAMs ----
 # fit GAM random site effect
@@ -27,7 +38,7 @@ gam_model <- gam(
   richness ~ s(time_since_haboob) +
     #s(tod, bs = "cc") +
     s(meta.vsn, bs = "re"),
-  data = birds_haboob,
+  data = birds_3h_haboob,
   method = "REML"
 )
 summary(gam_model)
@@ -37,19 +48,23 @@ AIC(gam_model)
 # fit GAM without random effect of site
 gam_model_global <- gam(
   richness ~ s(time_since_haboob),
-  data = birds_haboob
+  data = birds_3h_haboob
 )
 
-ggplot(data = birds_haboob, aes(x = time_since_haboob, y = richness)) + 
+ggplot(data = birds_3h_haboob, aes(x = time_since_haboob, y = richness)) +
+  geom_point(col = "blue") +
   geom_smooth(col = "black") +
-  geom_smooth(aes(col = meta.vsn), alpha = 0.5, se=F) +
+  #geom_smooth(aes(col = meta.vsn), alpha = 0.5, se=F) +
+  facet_wrap(~meta.vsn) +
   scale_color_viridis_d()
 
+ggplot(data = filter(birds_haboob, meta.vsn == "W08E"), aes(x = time_since_haboob, y = richness)) +
+  geom_point()
+
 # visualize smooth effect of time ----
-smooth_data <- birds_haboob %>%
+smooth_data <- birds_3h_haboob %>%
   dplyr::select(meta.vsn, date, time_since_haboob, tod)
 global_smooth_data <- smooth_data %>%
-  filter(meta.vsn == "W08B") %>%
   select(-meta.vsn)
 
 all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE)
@@ -60,9 +75,7 @@ plot_df_all <- smooth_data %>%
     fit = all_preds$fit,
     lower = fit - 1.96 * all_preds$se.fit,
     upper = fit + 1.96 * all_preds$se.fit
-  ) %>%
-  # cut node with missing pm10 data
-  filter(meta.vsn != "W09A")
+  )
 plot_df_global <- global_smooth_data %>%
   mutate(
     fit = global_preds$fit,
@@ -70,17 +83,35 @@ plot_df_global <- global_smooth_data %>%
     upper = fit + 1.96 * global_preds$se.fit
   )
 
-# plot separate lines for each node
+# get minimum predicted species richness timing
+min_richness_timing <- plot_df_global[which(plot_df_global$fit == min(plot_df_global$fit)),]$date
+
+# plot GAM with separate lines for each node
 ggplot(plot_df_all, aes(x = date, y = fit)) +
-  geom_point(data = filter(birds_haboob, meta.vsn != "W09A"), aes(x = date, y = richness), size = 1, alpha = 0.3) +
-  geom_line(color = "blue") +
+  geom_point(data = birds_3h_haboob, aes(x = date, y = richness), size = 1, alpha = 0.3) +
+  geom_smooth(data = birds_3h_haboob, aes(x = date, y = richness), linetype = "dashed", col = "red", alpha = 0.3) +
+  geom_line(color = "blue", linewidth = 1.5, alpha = 0.5) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
   geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red") +
-  #geom_point(data = birds_haboob, aes(x = date, y = richness)) +
   facet_wrap(~ meta.vsn) +
   labs(
     title = "Bird Richness Recovery After Haboob",
     x = "Date",
+    y = "Bird Species Richness"
+  ) +
+  theme_minimal(base_size = 20)
+
+# plot loess
+ggplot(data = filter(birds_3h_haboob, meta.vsn != "W09A")) +
+  geom_point(aes(x = time_since_haboob, y = richness), size = 1, alpha = 0.3) +
+  geom_smooth(aes(x = time_since_haboob, y = richness), color = "blue") +
+  #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  geom_vline(aes(xintercept = 0), linetype = "dashed", color = "red") +
+  #geom_point(data = birds_haboob, aes(x = date, y = richness)) +
+  facet_wrap(~meta.vsn) +
+  labs(
+    title = "Bird Richness Recovery After Haboob",
+    x = "Days Since Haboob",
     y = "Hourly Richness"
   ) +
   theme_minimal(base_size = 20)
@@ -100,7 +131,7 @@ ggplot(plot_df_global, aes(x = date, y = fit)) +
   ) +
   theme_minimal(base_size = 20)
 
-# map of node locations ----
+ # map of node locations ----
 # list node coordinates
 node_coords <- data.frame(
   name = c("W0A4",
@@ -145,32 +176,40 @@ node_coords <- data.frame(
 )
 
 # get shapefile for illinois
-il_map <- map_data("county", region = "illinois")
+#il_map <- map_data("county", region = "illinois")
+il_map <- st_read("../data/illinois_map/IL_BNDY_State_Py.shp")
+chicago_map <- st_read("../data/chicago_map/geo_export_163a5206-da52-4e0c-bf5e-3a62023dcd97.shp") %>%
+  st_transform(crs = 4326)
+
+plot(chicago_map)
 
 ggplot() +
-  geom_polygon(data = il_map, aes(x = long, y = lat, group = group),
+  geom_sf(data = il_map,
                fill = "lightgray", col = "white") +
-  geom_point(data = node_coords, aes(x = lon, y = lat), col = "red", size = 3) +
+  geom_sf(data = chicago_map,
+               fill = "darkgray", col = "darkgray", inherit.aes = F) +
+  geom_point(data = node_coords, aes(x = lon, y = lat), col = "red", size = 4) +
   geom_label_repel(data = node_coords, aes(x = lon, y = lat, label = name),
                    col = "black", segment.color = "black", size = 8) +
-  coord_fixed(
-    ratio = 1.3,
-    xlim = c(-88.1, -87.55),  # Longitude bounds
-    ylim = c(41.65, 42.10)    # Latitude bounds
+  coord_sf(
+    xlim = c(-88.1, -87.55),  # longitude bounds
+    ylim = c(41.65, 42.10),   # latitude bounds
+    expand = FALSE
   ) +
-  theme_minimal(base_size = 20) +
+  theme_void(base_size = 20) +
   theme(
     panel.background = element_rect(fill = "lightblue", color = NA),
     panel.grid = element_blank()
-  ) +
-  labs(title = "Sensor Locations in Chicago Area",
-       x = "Longitude", y = "Latitude")
+  )
 
 # PM10 timeseries with haboob time ----
 # subset data around haboob
 haboob_pm10 <- pm10 %>%
   filter(timestamp > ymd_hms("2025-05-16 08:00:00") &
-           timestamp < ymd_hms("2025-05-20 08:00:00"))
+           timestamp < ymd_hms("2025-05-20 08:00:00")) %>%
+  # drop malfunctioning nodes
+  filter(meta.vsn != "W0A0",
+         meta.vsn != "W098")
 
 ggplot(data = haboob_pm10, aes(x = timestamp, y = value, col = meta.vsn)) +
   geom_line() +
@@ -178,13 +217,13 @@ ggplot(data = haboob_pm10, aes(x = timestamp, y = value, col = meta.vsn)) +
   theme_minimal(base_size = 20) +
   labs(x = "Date",
        y = "PM10 Concentration (ug/m^3)",
-       col = "CROCUS Node",
+       col = "Node ID",
        title = "Particulate Matter Spikes During Haboob") +
   scale_color_viridis_d()
   
 # airport visibility ----
 ggplot(data = visibility, aes(x = timestamp, y = vsby, col = station)) +
-  geom_line(linewidth = 2) +
+  geom_line() +
   theme_minimal(base_size = 20) +
   labs(x = "Date",
        y = "Visibility (mi)",
@@ -192,7 +231,17 @@ ggplot(data = visibility, aes(x = timestamp, y = vsby, col = station)) +
        title = "Visibility Drops During Haboob") +
   scale_color_viridis_d()
 
+# wind speed and direction ----
+wind_speed <- filter(wind, name == "wxt.wind.speed")
+wind_direction <- filter(wind, name == "wxt.wind.direction")
 
+ggplot(data = wind_speed, aes(x = timestamp, y = value, col = meta.vsn)) +
+  geom_smooth() +
+  geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red")
+
+ggplot(data = wind_direction, aes(x = timestamp, y = value, col = meta.vsn)) +
+  geom_smooth() +
+  geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red")
 
 
 

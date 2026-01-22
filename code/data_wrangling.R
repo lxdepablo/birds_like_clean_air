@@ -34,6 +34,17 @@ birds_summary <- birds_clean %>%
   summarize(richness = length(unique(species)), .groups = "drop") %>%
   mutate(date = ymd_h(paste(year, month, day, hour)))
 
+# get 3hr richness summary
+birds_3h_summary <- birds_clean %>%
+  mutate(year = year(timestamp),
+         month = month(timestamp),
+         day = day(timestamp),
+         hour = hour(timestamp),
+         hour_bin = floor(hour/3)*3) %>%
+  group_by(meta.vsn, year, month, day, hour_bin) %>%
+  summarize(richness = length(unique(species)), .groups = "drop") %>%
+  mutate(date = ymd_h(paste(year, month, day, hour_bin)))
+
 # backfill zeroes for missing hours
 birds_backfilled <- bind_rows(lapply(unique(birds_summary$meta.vsn), function(x){
   curr_node <- filter(birds_summary, meta.vsn == x)
@@ -47,8 +58,26 @@ birds_backfilled <- bind_rows(lapply(unique(birds_summary$meta.vsn), function(x)
     dplyr::select(-c(year, month, day, hour))
 }))
 
+birds_3h_backfilled <- bind_rows(lapply(unique(birds_3h_summary$meta.vsn), function(x){
+  curr_node <- filter(birds_3h_summary, meta.vsn == x)
+  curr_backfilled <- data.frame(date = seq(min(curr_node$date),
+                                           max(curr_node$date),
+                                           by = "3 hours")) %>%
+    left_join(curr_node, by = "date") %>%
+    mutate(richness = ifelse(is.na(richness), 0, richness),
+           meta.vsn = x) %>%
+    ungroup() %>%
+    dplyr::select(-c(year, month, day, hour_bin))
+}))
+
 # get data just around haboob
 birds_haboob <- birds_backfilled %>%
+  filter(date %in% seq(ymd_h("2025-05-15 16"), ymd_h("2025-05-30 22"), by = "hour")) %>%
+  mutate(tod = hour(date),
+         tod_sin = sin(2 * pi * tod / 24),
+         tod_cos = cos(2 * pi * tod / 24))
+
+birds_3h_haboob <- birds_3h_backfilled %>%
   filter(date %in% seq(ymd_h("2025-05-15 16"), ymd_h("2025-05-30 22"), by = "hour")) %>%
   mutate(tod = hour(date),
          tod_sin = sin(2 * pi * tod / 24),
@@ -98,13 +127,28 @@ haboob_time <- bind_rows(lapply(unique(pm10$meta.vsn), function(node){
              peak_pm10 = max(curr_node$value))
   
 })) %>%
-  # drop W0A0 since it didnt record data during the haboob
-  filter(meta.vsn != "W0A0")
+  # add in a blank row for W09A since it didn't record pm10 data
+  rbind(data.frame(meta.vsn = "W09A",
+                   haboob_peak = NA,
+                   peak_pm10 = NA))
+
+# use values from nearest other nodes for W098, W0A0, and W09A since they didn't record
+haboob_time[which(haboob_time$meta.vsn=="W098"), 3] <- haboob_time[which(haboob_time$meta.vsn=="W08B"), 3]
+haboob_time[which(haboob_time$meta.vsn=="W098"), 2] <- haboob_time[which(haboob_time$meta.vsn=="W08B"), 2]
+haboob_time[which(haboob_time$meta.vsn=="W0A0"), 3] <- haboob_time[which(haboob_time$meta.vsn=="W08B"), 3]
+haboob_time[which(haboob_time$meta.vsn=="W0A0"), 2] <- haboob_time[which(haboob_time$meta.vsn=="W08B"), 2]
+haboob_time[which(haboob_time$meta.vsn=="W09A"), 3] <- haboob_time[which(haboob_time$meta.vsn=="W0A4"), 3]
+haboob_time[which(haboob_time$meta.vsn=="W09A"), 2] <- haboob_time[which(haboob_time$meta.vsn=="W0A4"), 2]
+
 
 # add time since haboob column to birds data
 birds_haboob <- birds_haboob %>%
-  # drop nodes with incomplete data
-  filter(!(meta.vsn %in% c("W0A0"))) %>%
+  left_join(haboob_time, by = "meta.vsn") %>%
+  mutate(time_since_haboob = as.numeric(difftime(date, haboob_peak, units = "days")),
+         tod = hour(date)) %>%
+  dplyr::select(-haboob_peak)
+
+birds_3h_haboob <- birds_3h_haboob %>%
   left_join(haboob_time, by = "meta.vsn") %>%
   mutate(time_since_haboob = as.numeric(difftime(date, haboob_peak, units = "days")),
          tod = hour(date)) %>%
@@ -121,6 +165,7 @@ asos_clean <- asos_raw %>%
 write_csv(pm10, "../data/pm10.csv")
 write_csv(haboob_time, "../data/haboob_time.csv")
 write_csv(birds_haboob, "../data/birds_haboob.csv")
+write_csv(birds_3h_haboob, "../data/birds_3h_haboob.csv")
 write_csv(asos_clean, "../data/visibility.csv")
 
 
