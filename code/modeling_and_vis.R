@@ -39,6 +39,7 @@ gam_model <- gam(
     #s(tod, bs = "cc") +
     s(meta.vsn, bs = "re"),
   data = birds_3h_haboob,
+  family = nb(link = "log"),
   method = "REML"
 )
 summary(gam_model)
@@ -67,7 +68,7 @@ smooth_data <- birds_3h_haboob %>%
 global_smooth_data <- smooth_data %>%
   select(-meta.vsn)
 
-all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE)
+all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE, type="response")
 global_preds <- predict(gam_model_global, newdata = global_smooth_data, se.fit = TRUE)
 
 plot_df_all <- smooth_data %>%
