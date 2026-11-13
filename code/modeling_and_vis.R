@@ -33,24 +33,21 @@ max_pm10 <- pm10 %>%
   summarize(max_val = max(value))
 
 # fit GAMs ----
-# fit GAM random site effect
+# fit GAM with doy fixed effect
 gam_model <- gam(
-  richness ~ s(time_since_haboob) +
-    #s(tod, bs = "cc") +
-    s(meta.vsn, bs = "re"),
+  richness ~ s(time_since_haboob) + s(meta.vsn, bs = "re"),
   data = birds_3h_haboob,
   family = nb(link = "log"),
   method = "REML"
 )
 summary(gam_model)
 
-AIC(gam_model)
-
-# fit GAM without random effect of site
+# fit GAM without fixed effect
 gam_model_global <- gam(
   richness ~ s(time_since_haboob),
   data = birds_3h_haboob
 )
+summary(gam_model_global)
 
 ggplot(data = birds_3h_haboob, aes(x = time_since_haboob, y = richness)) +
   geom_point(col = "blue") +
@@ -63,74 +60,71 @@ ggplot(data = filter(birds_haboob, meta.vsn == "W08E"), aes(x = time_since_haboo
   geom_point()
 
 # visualize smooth effect of time ----
-smooth_data <- birds_3h_haboob %>%
-  dplyr::select(meta.vsn, date, time_since_haboob, tod)
-global_smooth_data <- smooth_data %>%
-  select(-meta.vsn)
 
-all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE, type="response")
-global_preds <- predict(gam_model_global, newdata = global_smooth_data, se.fit = TRUE)
+# smooth_data <- birds_3h_haboob %>%
+#   dplyr::select(meta.vsn, date, time_since_haboob, doy, haboob_yr)
+# global_smooth_data <- smooth_data %>%
+#   select(-meta.vsn)
+# 
+# all_preds <- predict(gam_model, newdata = smooth_data, se.fit = TRUE, type="response")
+# global_preds <- predict(gam_model_global, newdata = global_smooth_data, se.fit = TRUE)
+# 
+# plot_df_all <- smooth_data %>%
+#   mutate(
+#     fit = all_preds$fit,
+#     lower = fit - 1.96 * all_preds$se.fit,
+#     upper = fit + 1.96 * all_preds$se.fit
+#   )
+# plot_df_global <- global_smooth_data %>%
+#   mutate(
+#     fit = global_preds$fit,
+#     lower = fit - 1.96 * global_preds$se.fit,
+#     upper = fit + 1.96 * global_preds$se.fit
+#   )
 
-plot_df_all <- smooth_data %>%
-  mutate(
-    fit = all_preds$fit,
-    lower = fit - 1.96 * all_preds$se.fit,
-    upper = fit + 1.96 * all_preds$se.fit
-  )
-plot_df_global <- global_smooth_data %>%
-  mutate(
-    fit = global_preds$fit,
-    lower = fit - 1.96 * global_preds$se.fit,
-    upper = fit + 1.96 * global_preds$se.fit
-  )
+plot_df <- birds_3h_haboob %>%
+  filter(!is.na(time_since_haboob)) %>%
+  left_join(haboob_time %>% dplyr::select(meta.vsn, haboob_peak), by = "meta.vsn") %>%
+  mutate(year = factor(year(date)),
+         days_since_haboob = as.numeric(difftime(date, haboob_peak, units = "days")))
 
-# get minimum predicted species richness timing
-min_richness_timing <- plot_df_global[which(plot_df_global$fit == min(plot_df_global$fit)),]$date
+pred <- predict(gam_model, newdata = plot_df, se.fit = TRUE) # link scale
 
-# plot GAM with separate lines for each node
-ggplot(plot_df_all, aes(x = date, y = fit)) +
-  geom_point(data = birds_3h_haboob, aes(x = date, y = richness), size = 1, alpha = 0.3) +
-  geom_smooth(data = birds_3h_haboob, aes(x = date, y = richness), linetype = "dashed", col = "red", alpha = 0.3) +
-  geom_line(color = "blue", linewidth = 1.5, alpha = 0.5) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
-  geom_vline(data = haboob_time, aes(xintercept = haboob_peak), linetype = "dashed", color = "red") +
+plot_df <- plot_df %>%
+  mutate(fit = exp(pred$fit),
+         lower = exp(pred$fit - 1.96 * pred$se.fit),
+         upper = exp(pred$fit + 1.96 * pred$se.fit))
+
+ggplot(plot_df, aes(x = date)) +
+  geom_point(aes(y = richness), size = 1.5, alpha = 0.2) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, colour = NA) +
+  geom_smooth(aes(y = richness), col = "red", linetype = "dashed", se = FALSE) +
+  geom_line(aes(y = fit), linewidth = 1.5, alpha = 0.7, col = "blue") +
+  geom_vline(data = distinct(plot_df, meta.vsn, haboob_peak),
+             aes(xintercept = haboob_peak),
+             linetype = "dashed", colour = "red") +
   facet_wrap(~ meta.vsn) +
-  labs(
-    title = "Bird Richness Recovery After Haboob",
-    x = "Date",
-    y = "Bird Species Richness"
-  ) +
+  scale_x_datetime(date_labels = "%b %d") +
+  labs(x = "Date", y = "Bird species richness") +
   theme_minimal(base_size = 20)
 
-# plot loess
-ggplot(data = filter(birds_3h_haboob, meta.vsn != "W09A")) +
-  geom_point(aes(x = time_since_haboob, y = richness), size = 1, alpha = 0.3) +
-  geom_smooth(aes(x = time_since_haboob, y = richness), color = "blue") +
-  #geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
-  geom_vline(aes(xintercept = 0), linetype = "dashed", color = "red") +
-  #geom_point(data = birds_haboob, aes(x = date, y = richness)) +
-  facet_wrap(~meta.vsn) +
-  labs(
-    title = "Bird Richness Recovery After Haboob",
-    x = "Days Since Haboob",
-    y = "Hourly Richness"
-  ) +
-  theme_minimal(base_size = 20)
+# get min and max mean predicted richness across nodes for each 3 hour bin
+mean_richness <- plot_df %>%
+  mutate(fit = as.numeric(fit)) %>%
+  group_by(date) %>%
+  summarize(mean_fit = mean(fit, na.rm = TRUE),
+            n_nodes = n(), .groups = "drop")
 
-# plot global trend
-# get mean time of haboob
-mean_haboob_time <- mean(haboob_time$haboob_peak)
-ggplot(plot_df_global, aes(x = date, y = fit)) +
-  geom_line(size = 2) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
-  geom_vline(xintercept = mean_haboob_time, linetype = "dashed", color = "red") +
-  #facet_wrap(~ meta.vsn) +
-  labs(
-    title = "Bird Richness Recovers After Haboob",
-    x = "Date",
-    y = "Hourly Richness"
-  ) +
-  theme_minimal(base_size = 20)
+richness_summary <- mean_richness %>%
+  summarize(
+    min_richness = min(mean_fit),
+    min_time     = date[which.min(mean_fit)],
+    max_richness = max(mean_fit),
+    max_time     = date[which.max(mean_fit)],
+    increase     = max_richness - min_richness,
+    pct_change   = (min_richness / max_richness - 1) * 100
+  )
+richness_summary
 
  # map of node locations ----
 # list node coordinates
@@ -216,21 +210,48 @@ ggplot(data = haboob_pm10, aes(x = timestamp, y = value, col = meta.vsn)) +
   geom_line() +
   #geom_vline(xintercept = ymd_hm("2025-05-16 18:23"), col = "red", linetype = "dashed") +
   theme_minimal(base_size = 20) +
-  labs(x = "Date",
+  labs(#title = "Particulate Matter Spikes During Haboob",
+       x = "Date",
        y = "PM10 Concentration (ug/m^3)",
-       col = "Node ID",
-       title = "Particulate Matter Spikes During Haboob") +
+       col = "Node ID") +
   scale_color_viridis_d()
   
 # airport visibility ----
 ggplot(data = visibility, aes(x = timestamp, y = vsby, col = station)) +
   geom_line() +
   theme_minimal(base_size = 20) +
-  labs(x = "Date",
+  labs(#title = "Visibility Drops During Haboob",
+       x = "Date",
        y = "Visibility (mi)",
-       col = "Station",
-       title = "Visibility Drops During Haboob") +
+       col = "Station") +
   scale_color_viridis_d()
+
+# zoomed haboob timing vs richness windows (Fig. S3) ----
+zoom <- c(ymd_hms("2025-05-16 12:00:00"), ymd_hms("2025-05-17 12:00:00"))
+
+# elevated dust: PM10 above half of each node's peak
+dust <- haboob_pm10 %>%
+  filter(timestamp > zoom[1], timestamp < zoom[2]) %>%
+  group_by(meta.vsn) %>%
+  filter(value > max(value) / 2) %>%
+  summarize(start = min(timestamp), end = max(timestamp))
+
+ggplot() +
+  geom_rect(data = dust, aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+            fill = "orange", alpha = 0.4) +
+  geom_vline(xintercept = seq(zoom[1], zoom[2], by = "3 hours"), col = "grey80") +
+  geom_vline(data = haboob_time, aes(xintercept = haboob_peak), col = "red", linetype = "dashed") +
+  geom_line(data = filter(haboob_pm10, timestamp > zoom[1], timestamp < zoom[2]),
+            aes(x = timestamp, y = value)) +
+  geom_step(data = filter(birds_3h_haboob, date >= zoom[1], date <= zoom[2]),
+            aes(x = date, y = richness * 200), col = "blue") +
+  facet_wrap(~meta.vsn) +
+  scale_y_continuous(sec.axis = sec_axis(~ . / 200, name = "Bird Species Richness")) +
+  scale_x_datetime(date_labels = "%H:%M") +
+  coord_cartesian(xlim = zoom) +
+  theme_minimal(base_size = 20) +
+  labs(x = "Time (UTC)",
+       y = "PM10 Concentration (ug/m^3)")
 
 # wind speed and direction ----
 wind_speed <- filter(wind, name == "wxt.wind.speed")
