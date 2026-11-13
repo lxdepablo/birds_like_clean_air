@@ -14,7 +14,6 @@ library(riem)
 library(furrr)
 library(tidyverse)
 
-# pull bird richness data ----
 # define which nodes to pull data from
 crocus_vsns <- c("W0A4", 
                  "W0A1",
@@ -29,10 +28,10 @@ crocus_vsns <- c("W0A4",
                  "W08E",
                  "W08B")
 
-# pull bird richness data from each node
 # pull data in parallel
 plan(multisession, workers = availableCores())
 
+# pull bird data ----
 all_bird_data <- bind_rows(future_map(crocus_vsns, function(vsn){
   curr_node_birds <- query_sage_data(start = "2025-05-02",
                                      end = "2025-06-01",
@@ -40,6 +39,27 @@ all_bird_data <- bind_rows(future_map(crocus_vsns, function(vsn){
                                                    vsn = vsn))
 }))
 
+# pull Sage job metadata ----
+all_bird_runs <- bind_rows(future_map(crocus_vsns, function(vsn){
+  query_sage_data(start = "2025-05-02",
+                  end = "2025-06-01",
+                  filter = list(name = "plugin.duration.*",
+                                plugin = ".*avian-diversity-monitoring.*",
+                                vsn = vsn))
+}))
+
+# estimate recording windows
+runs <- all_bird_runs %>%
+  filter(name == "plugin.duration.input") %>%
+  mutate(input_s = as.numeric(value) / 1e9)
+
+# recording time per run
+# median minus 1 s of silence = clip length
+summary(runs$input_s)
+
+# actual recordings per node per three-hour window, including ones with no detections
+runs_per_window <- runs %>%
+  count(meta.vsn, window = floor_date(timestamp, "3 hours"), name = "n_recordings")
 
 # pull air quality data ----
 all_aq_data <- bind_rows(future_map(crocus_vsns, function(vsn){

@@ -140,6 +140,23 @@ haboob_time[which(haboob_time$meta.vsn=="W0A0"), 2] <- haboob_time[which(haboob_
 haboob_time[which(haboob_time$meta.vsn=="W09A"), 3] <- haboob_time[which(haboob_time$meta.vsn=="W0A4"), 3]
 haboob_time[which(haboob_time$meta.vsn=="W09A"), 2] <- haboob_time[which(haboob_time$meta.vsn=="W0A4"), 2]
 
+# calculate duration of elevated dust ----
+dust <- pm10 %>%
+  inner_join(haboob_time, by = "meta.vsn") %>%
+  filter(timestamp > haboob_peak - hours(24), timestamp < haboob_peak + hours(12)) %>%
+  group_by(meta.vsn) %>%
+  mutate(baseline = median(value[timestamp < haboob_peak - hours(3)]),
+         threshold = baseline + 0.5 * (max(value) - baseline)) %>%
+  filter(value > threshold) %>%
+  summarise(dust_start = min(timestamp),
+            dust_end = max(timestamp),
+            duration_h = as.numeric(difftime(dust_end, dust_start, units = "hours")),
+            n_windows = length(seq(floor_date(dust_start, "3 hours"),
+                                   floor_date(dust_end, "3 hours"), by = "3 hours")))
+
+summary(dust$duration_h)
+range(dust$n_windows)
+
 
 # add time since haboob column to birds data
 birds_haboob <- birds_haboob %>%
@@ -150,8 +167,13 @@ birds_haboob <- birds_haboob %>%
 
 birds_3h_haboob <- birds_3h_haboob %>%
   left_join(haboob_time, by = "meta.vsn") %>%
-  mutate(time_since_haboob = as.numeric(difftime(date, haboob_peak, units = "days")),
-         tod = hour(date)) %>%
+  mutate(haboob_yr = as.numeric(year(date) == 2025),
+         time_since_haboob = if_else(
+           haboob_yr == 1,
+           as.numeric(difftime(date, haboob_peak, units = "days")),
+           0),
+         tod = hour(date),
+         doy = yday(date)) %>%
   dplyr::select(-haboob_peak)
 
 # format airport visibility data
@@ -169,6 +191,9 @@ write_csv(birds_3h_haboob, "../data/birds_3h_haboob.csv")
 write_csv(asos_clean, "../data/visibility.csv")
 
 
+ggplot(data = birds_3h_haboob, aes(x = time_since_haboob, y = richness)) +
+  geom_point() +
+  facet_wrap(~meta.vsn)
 
 
 
